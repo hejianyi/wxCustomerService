@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <script type="text/javascript" src="http://172.168.10.8:8080/mms-admin/static/easyui/jquery.min.js"></script>
+    <script type="text/javascript" src="http://172.168.10.8:8080/mms-admin/static/js/js-xlsx/xlsx.core.min.js"></script>
+    <script type="text/javascript" src="http://172.168.10.8:8080/mms-admin/static/js/js-xlsx/xlsx.full.min.js"></script>
+</head>
+
+<body>
+    <input type="file" onchange="importf(this)" />
+    <script>
+    function isUTF8(bytes) {
+        var i = 0;
+        while(i < bytes.length)
+        {
+            if(     (// ASCII
+                        bytes[i] == 0x09 ||
+                        bytes[i] == 0x0A ||
+                        bytes[i] == 0x0D ||
+                        (0x20 <= bytes[i] && bytes[i] <= 0x7E)
+                    )
+            ) {
+                i += 1;
+                continue;
+            }
+
+            if(     (// non-overlong 2-byte
+                        (0xC2 <= bytes[i] && bytes[i] <= 0xDF) &&
+                        (0x80 <= bytes[i+1] && bytes[i+1] <= 0xBF)
+                    )
+            ) {
+                i += 2;
+                continue;
+            }
+
+            if(     (// excluding overlongs
+                        bytes[i] == 0xE0 &&
+                        (0xA0 <= bytes[i + 1] && bytes[i + 1] <= 0xBF) &&
+                        (0x80 <= bytes[i + 2] && bytes[i + 2] <= 0xBF)
+                    ) ||
+                    (// straight 3-byte
+                    ((0xE1 <= bytes[i] && bytes[i] <= 0xEC) ||
+                    bytes[i] == 0xEE ||
+                    bytes[i] == 0xEF) &&
+                    (0x80 <= bytes[i + 1] && bytes[i+1] <= 0xBF) &&
+                    (0x80 <= bytes[i+2] && bytes[i+2] <= 0xBF)
+                    ) ||
+                    (// excluding surrogates
+                    bytes[i] == 0xED &&
+                    (0x80 <= bytes[i+1] && bytes[i+1] <= 0x9F) &&
+                    (0x80 <= bytes[i+2] && bytes[i+2] <= 0xBF)
+                    )
+            ) {
+                i += 3;
+                continue;
+            }
+
+            if(     (// planes 1-3
+                        bytes[i] == 0xF0 &&
+                        (0x90 <= bytes[i + 1] && bytes[i + 1] <= 0xBF) &&
+                        (0x80 <= bytes[i + 2] && bytes[i + 2] <= 0xBF) &&
+                        (0x80 <= bytes[i + 3] && bytes[i + 3] <= 0xBF)
+                    ) ||
+                    (// planes 4-15
+                    (0xF1 <= bytes[i] && bytes[i] <= 0xF3) &&
+                    (0x80 <= bytes[i + 1] && bytes[i + 1] <= 0xBF) &&
+                    (0x80 <= bytes[i + 2] && bytes[i + 2] <= 0xBF) &&
+                    (0x80 <= bytes[i + 3] && bytes[i + 3] <= 0xBF)
+                    ) ||
+                    (// plane 16
+                    bytes[i] == 0xF4 &&
+                    (0x80 <= bytes[i + 1] && bytes[i + 1] <= 0x8F) &&
+                    (0x80 <= bytes[i + 2] && bytes[i + 2] <= 0xBF) &&
+                    (0x80 <= bytes[i + 3] && bytes[i + 3] <= 0xBF)
+                    )
+            ) {
+                i += 4;
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+    /*
+    FileReader共有4种读取方法：
+    1.readAsArrayBuffer(file)：将文件读取为ArrayBuffer。
+    2.readAsBinaryString(file)：将文件读取为二进制字符串
+    3.readAsDataURL(file)：将文件读取为Data URL
+    4.readAsText(file, [encoding])：将文件读取为文本，encoding缺省值为'UTF-8'
+    */
+    var wb;//读取完成的数据
+    var rABS = false; //是否将文件读取为二进制字符串
+    var isCSV;
+    function importf(obj) {//导入
+        if (!obj.files) return;
+        var f = obj.files[0];
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            var data = e.target.result;
+            wb = null;
+            if (isCSV) {
+                data = new Uint8Array(data);
+                var f = isUTF8(data);
+
+                if (f) {
+                    data = e.target.result;
+                } else {
+                    var str = cptable.utils.decode(936, data);
+                    wb = XLSX.read(str, { type: "string" });
+                }
+            }else{
+                alert("不是CSV文件")
+            }
+            if (!wb) {
+                wb = rABS|| isCSV ? XLSX.read(btoa(fixdata(data)), { type: 'base64' }) : XLSX.read(data, { type: 'binary' });
+            }
+            //wb.SheetNames[0]是获取Sheets中第一个Sheet的名字
+            //wb.Sheets[Sheet名]获取第一个Sheet的数据
+            var jsonData = JSON.stringify(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]));
+            console.log(jsonData)
+        };
+        isCSV = f.name.split(".").reverse()[0] == "csv";//判断是否是 CSV
+        if (rABS || isCSV) {
+            reader.readAsArrayBuffer(f);
+        } else {
+            reader.readAsBinaryString(f);
+        }
+        obj.value = "";
+    }
+    function fixdata(data) { //文件流转BinaryString
+        var o = "",
+            l = 0,
+            w = 10240;
+        for (; l < data.byteLength / w; ++l) o += String.fromCharCode.apply(null, new Uint8Array(data.slice(l * w, l * w + w)));
+        o += String.fromCharCode.apply(null, new Uint8Array(data.slice(l * w)));
+        return o;
+    }
+    </script>
+</body>
+</html>
